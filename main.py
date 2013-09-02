@@ -1,9 +1,9 @@
 import csv
 import numpy as np
 import pylab as plt
-import dateutil.parser
 import datetime
-from datetime import timedelta
+import time
+import math
 
 def readOutcome(outcome):
 
@@ -14,9 +14,12 @@ def readOutcome(outcome):
         return int(outcome)
 
 
-def readcsvfile(file, Cast0 = str, Cast1 = str, Cast2 = str, Cast3 = str, Cast4 = str):
+def readTime(time):
 
-    print Cast0(4)
+    return datetime.datetime.strptime(time[:-1], "%Y-%m-%dT%H:%M:%S.%f")
+
+
+def readcsvfile(file, Cast0 = str, Cast1 = str, Cast2 = str, Cast3 = str, Cast4 = str):
 
     lines = []
 
@@ -48,13 +51,66 @@ def readcsvfile(file, Cast0 = str, Cast1 = str, Cast2 = str, Cast3 = str, Cast4 
 
     return lines
 
+
+#Investigate how much time generally elapses between visits
+def DetermineSessionLength(accountVisits):
+
+    deltat = []
+
+    for acc in accountVisits:
+        accountVisits[acc] = sorted(accountVisits[acc])
+        
+        for idx, visit in enumerate(accountVisits[acc]):
+            if idx == 0:
+                continue
+
+            deltat.append((time.mktime(visit[0].timetuple()) - time.mktime(accountVisits[acc][idx-1][0].timetuple()))/60.)
+
+
+    deltat = np.array(deltat)
+
+    ax = plt.subplot(111)
+    bins = [i*15 for i in range(1000)]
+    plt.hist(np.clip(deltat, 0, 10001), bins, histtype='step', normed=1)
+    ax.set_yscale('log')
+    plt.xlim([0, 10000])
+    ax.grid(True)
+    plt.show()
+
+    ax = plt.subplot(111)
+    bins = [i for i in range(11000)]
+    plt.hist(np.clip(deltat, 0, 10001), bins, histtype='step', normed=1, cumulative=True)
+    plt.xlim([0, 10000])
+    plt.ylim([0.9, 1.05])
+    ax.grid(True)
+    plt.show()
+
+
+    ax = plt.subplot(111)
+    bins = [i for i in range(11000)]
+    plt.hist(np.clip(deltat, 0, 10001), bins, histtype='step', normed=1)
+    ax.set_yscale('log')
+    plt.xlim([0, 100])
+    ax.grid(True)
+    plt.show()
+
+    ax = plt.subplot(111)
+    bins = [i for i in range(123)]
+    plt.hist(np.clip(deltat, 0, 121), bins, histtype='step', normed=1, cumulative=True)
+    ax.set_yscale('linear')
+    plt.xlim([0, 120])
+    plt.ylim([0.8, 1.0])
+    ax.grid(True)
+    plt.show()
+
+
 def main():
 
-    accounts = readcsvfile('accounts.csv', str, dateutil.parser.parse, readOutcome)
+    accounts = readcsvfile('accounts.csv', str, readTime, readOutcome)
 
-    nodevisits = readcsvfile('nodevisits.csv', str, str, dateutil.parser.parse, str)
+    nodevisits = readcsvfile('nodevisits.csv', str, str, readTime, str)
 
-    submissions = readcsvfile('submissions.csv', str, str, dateutil.parser.parse, str, str)
+    submissions = readcsvfile('submissions.csv', str, str, readTime, str, str)
 
     accountVisits = {}
 
@@ -68,30 +124,20 @@ def main():
         else:
             accountVisits[acc] = [(visit[2], visit[3])]
 
-
-    i = 0
+    #DetermineSessionLength(accountVisits)
 
     for acc in accountVisits:
         accountVisits[acc] = sorted(accountVisits[acc])
-        
-        for visit in accountVisits[acc]:
-            print visit
 
-        print "\n"
-        if i > 5:
-            break
+        for idx, visit in enumerate(accountVisits[acc]):
+            if idx == 0:
+                continue
 
-        i += 1
+            #Time between visits in minutes
+            deltatime = (time.mktime(visit[0].timetuple()) - time.mktime(accountVisits[acc][idx-1][0].timetuple()))/60.
 
-    progress = [int(row[2]) for row in accounts]
-
-    ax = plt.subplot(111)
-
-    plt.hist(np.array(progress), 4, histtype='step')
-
-    ax.set_yscale('log')
-
-    plt.show()
+            if deltatime > 20:
+                print "New session"
 
 if __name__ == '__main__':
     main()
