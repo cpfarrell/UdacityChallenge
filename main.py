@@ -4,6 +4,8 @@ import pylab as plt
 import datetime
 import time
 import math
+import itertools
+
 
 def readOutcome(outcome):
 
@@ -19,7 +21,7 @@ def readTime(time):
     return datetime.datetime.strptime(time[:-1], "%Y-%m-%dT%H:%M:%S.%f")
 
 
-def readcsvfile(file, Cast0 = str, Cast1 = str, Cast2 = str, Cast3 = str, Cast4 = str):
+def readcsvfile(file, CastEvals = [str, str, str, str, str]):
 
     lines = []
 
@@ -29,88 +31,81 @@ def readcsvfile(file, Cast0 = str, Cast1 = str, Cast2 = str, Cast3 = str, Cast4 
         reader = csv.reader(csvfile, delimiter=',')
 
         for row in reader:
-            
-            Fields = len(row)
 
-            if Fields > 0:
-                row[0] = Cast0(row[0])
+            for i, (value, CastEval) in enumerate(itertools.izip(row, CastEvals)):
 
-            if Fields > 1:
-                row[1] = Cast1(row[1])
-
-            if Fields > 2:
-                row[2] = Cast2(row[2])
-
-            if Fields > 3:
-                row[3] = Cast3(row[3])
-
-            if Fields > 4:
-                row[4] = Cast4(row[4])
+                row[i] = CastEval(value)
 
             lines.append(row)
 
     return lines
 
 
+def deltaMinutes(time1, time2):
+
+    return (time.mktime(time1.timetuple()) - time.mktime(time2.timetuple()))/60.
+
+
+def plotHist(Values, Xmin = 0, Xmax = 0, Ymin = 0, Ymax = 0, Bins = 100., histtype = 'step', normed = False, yscale = "linear", cumulative = False):
+
+    ax = plt.subplot(111)
+    bins = np.linspace(Xmin, Xmax, Bins)
+
+    plt.hist(np.clip(Values, Xmin, Xmax), bins, histtype=histtype, normed=normed, cumulative = cumulative)
+
+    plt.xlim([Xmin, Xmax])
+
+    if Ymin != Ymax:
+        plt.ylim([Ymin, Ymax])
+
+    ax.set_yscale(yscale)
+    ax.grid(True)
+    plt.show()
+
 #Investigate how much time generally elapses between visits
-def DetermineSessionLength(accountVisits):
+def determineSessionLength(accountVisits):
 
     deltat = []
 
     for acc in accountVisits:
-        accountVisits[acc] = sorted(accountVisits[acc])
-        
+        accountVisits[acc] = sorted(accountVisits[acc], key=lambda k: k['time'])
+
         for idx, visit in enumerate(accountVisits[acc]):
             if idx == 0:
                 continue
 
-            deltat.append((time.mktime(visit[0].timetuple()) - time.mktime(accountVisits[acc][idx-1][0].timetuple()))/60.)
-
+            deltat.append(deltaMinutes(visit["time"], accountVisits[acc][idx-1]["time"]))
 
     deltat = np.array(deltat)
 
-    ax = plt.subplot(111)
-    bins = [i*15 for i in range(1000)]
-    plt.hist(np.clip(deltat, 0, 10001), bins, histtype='step', normed=1)
-    ax.set_yscale('log')
-    plt.xlim([0, 10000])
-    ax.grid(True)
-    plt.show()
+    plotHist(deltat, Xmin = 0, Xmax = 120, Bins = 120, normed = True, yscale = "log")
+    plotHist(deltat, Xmin = 0, Xmax = 120, Ymin = 0.7, Ymax = 1.0, Bins = 120, normed = True, yscale = "linear", cumulative = True)
 
-    ax = plt.subplot(111)
-    bins = [i for i in range(11000)]
-    plt.hist(np.clip(deltat, 0, 10001), bins, histtype='step', normed=1, cumulative=True)
-    plt.xlim([0, 10000])
-    plt.ylim([0.9, 1.05])
-    ax.grid(True)
-    plt.show()
+    plotHist(deltat, Xmin = 0, Xmax = 10000, Bins = 75, yscale = "log")
+
+def sessionProperties(accountSessions):
+
+    allSessions = []
+    for acc in accountSessions:
+        allSessions.extend(accountSessions[acc])
 
 
-    ax = plt.subplot(111)
-    bins = [i for i in range(11000)]
-    plt.hist(np.clip(deltat, 0, 10001), bins, histtype='step', normed=1)
-    ax.set_yscale('log')
-    plt.xlim([0, 100])
-    ax.grid(True)
-    plt.show()
+    sessionNodes = np.asarray([len(session) for session in allSessions])
+    sessionTime = np.asarray([deltaMinutes(session[len(session)-1]["time"], session[0]["time"]) for session in allSessions])
 
-    ax = plt.subplot(111)
-    bins = [i for i in range(123)]
-    plt.hist(np.clip(deltat, 0, 121), bins, histtype='step', normed=1, cumulative=True)
-    ax.set_yscale('linear')
-    plt.xlim([0, 120])
-    plt.ylim([0.8, 1.0])
-    ax.grid(True)
-    plt.show()
+    plotHist(sessionNodes, Xmin = 1, Xmax = 50, Bins = 50, normed = True, yscale = "log")
 
+    plotHist(sessionTime, Xmin = 0, Xmax = 50, Bins = 50, normed = True, yscale = "log")
+
+    plotHist(np.divide(sessionTime, sessionNodes), Xmin = 0, Xmax = 10, Bins = 50, normed = True, yscale = "log")
 
 def main():
 
-    accounts = readcsvfile('accounts.csv', str, readTime, readOutcome)
+    accounts = readcsvfile('accounts.csv', CastEvals = [str, readTime, readOutcome])
 
-    nodevisits = readcsvfile('nodevisits.csv', str, str, readTime, str)
+    nodevisits = readcsvfile('nodevisits.csv', CastEvals = [str, str, readTime, str])
 
-    submissions = readcsvfile('submissions.csv', str, str, readTime, str, str)
+    submissions = readcsvfile('submissions.csv', CastEvals = [str, str, readTime, str, str])
 
     accountVisits = {}
 
@@ -119,25 +114,41 @@ def main():
         acc = visit[1]
 
         if acc in accountVisits:
-            accountVisits[acc].append((visit[2], visit[3]))
+            accountVisits[acc].append({"time":visit[2], "path":visit[3]})
         
         else:
-            accountVisits[acc] = [(visit[2], visit[3])]
+            accountVisits[acc] = [{"time":visit[2], "path":visit[3]}]
 
-    #DetermineSessionLength(accountVisits)
+    determineSessionLength(accountVisits)
+
+    accountSessions = {}
 
     for acc in accountVisits:
-        accountVisits[acc] = sorted(accountVisits[acc])
+        accountVisits[acc] = sorted(accountVisits[acc], key=lambda k: k['time'])
+        accountSessions[acc] = []
+
+        Session = []
 
         for idx, visit in enumerate(accountVisits[acc]):
             if idx == 0:
-                continue
+                session = [visit]
 
-            #Time between visits in minutes
-            deltatime = (time.mktime(visit[0].timetuple()) - time.mktime(accountVisits[acc][idx-1][0].timetuple()))/60.
+            else:
+                #Time between visits in minutes
+                deltaTime = deltaMinutes(visit["time"], accountVisits[acc][idx-1]["time"])
 
-            if deltatime > 20:
-                print "New session"
+                #New session, defined as 20 minutes from above
+                if deltaTime > 20:
+                    accountSessions[acc].append(session)
+                    session = [visit]
+
+                else:
+                    session.append(visit)
+
+        accountSessions[acc].append(session)
+
+
+    sessionProperties(accountSessions)
 
 if __name__ == '__main__':
     main()
